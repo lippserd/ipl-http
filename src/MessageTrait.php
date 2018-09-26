@@ -2,6 +2,8 @@
 
 namespace ipl\Http;
 
+use Psr\Http\Message\StreamInterface;
+
 trait MessageTrait
 {
     /**
@@ -21,7 +23,7 @@ trait MessageTrait
     /**
      * The body of this request
      *
-     * @var string
+     * @var StreamInterface
      */
     protected $body;
 
@@ -31,6 +33,19 @@ trait MessageTrait
      * @var string
      */
     protected $protocolVersion;
+
+    public function getProtocolVersion()
+    {
+        return $this->protocolVersion;
+    }
+
+    public function withProtocolVersion($version)
+    {
+        $message = clone $this;
+        $message->protocolVersion = $version;
+
+        return $message;
+    }
 
     public function getHeaders()
     {
@@ -45,9 +60,81 @@ trait MessageTrait
     public function getHeader($header)
     {
         $header = strtolower($header);
-        if (isset($this->headerValues[$header])) {
-            return $this->headerValues[$header];
+
+        if (! isset($this->headerValues[$header])) {
+            return [];
         }
+
+        return $this->headerValues[$header];
+    }
+
+    public function getHeaderLine($name)
+    {
+        $name = strtolower($name);
+
+        if (! isset($this->headerValues[$name])) {
+            return '';
+        }
+
+        return implode(', ', $this->headerValues[$name]);
+    }
+
+    public function withHeader($name, $value)
+    {
+        $name = rtrim($name);
+
+        $value = $this->normalizeHeaderValues($value);
+
+        $normalized = strtolower($name);
+
+        $message = clone $this;
+        $message->headerNames[$normalized] = $name;
+        $message->headerValues[$normalized] = $value;
+
+        return $message;
+    }
+
+    public function withAddedHeader($name, $value)
+    {
+        $name = rtrim($name);
+
+        $value = $this->normalizeHeaderValues($value);
+
+        $normalized = strtolower($name);
+
+        $message = clone $this;
+        if (isset($message->headerNames[$normalized])) {
+            $message->headerValues[$normalized] = array_merge($message->headerValues[$normalized], $value);
+        } else {
+            $message->headerNames[$normalized] = $name;
+            $message->headerValues[$normalized] = $value;
+        }
+
+        return $message;
+    }
+
+    public function withoutHeader($name)
+    {
+        $normalized = strtolower(rtrim($name));
+
+        $message = clone $this;
+        unset($message->headerNames[$normalized]);
+        unset($message->headerValues[$normalized]);
+
+        return $message;
+    }
+
+    public function getBody()
+    {
+        return $this->body;
+    }
+
+    public function withBody(StreamInterface $body)
+    {
+        $message = clone $this;
+        $message->body = $body;
+
+        return $message;
     }
 
     protected function setHeaders(array $headers)
@@ -55,9 +142,7 @@ trait MessageTrait
         // Prepare header field names and header field values according to
         // https://tools.ietf.org/html/rfc7230#section-3.2.4
         $names = array_map('rtrim', array_keys($headers));
-        $headers = array_map(function ($value) {
-            return trim($value, " \t");
-        }, $headers);
+        $values = $this->normalizeHeaderValues($headers);
 
         $normalized = array_map('strtolower', $names);
 
@@ -68,17 +153,22 @@ trait MessageTrait
 
         $this->headerValues = array_combine(
             $normalized,
-            $headers
+            $values
         );
     }
 
-    public function getBody()
+    protected function normalizeHeaderValues(array $values)
     {
-        return $this->body;
-    }
+        // Prepare header field names and header field values according to
+        // https://tools.ietf.org/html/rfc7230#section-3.2.4
+        return array_map(function ($value) {
+            if (! is_array($value)) {
+                $value = [$value];
+            }
 
-    public function getProtocolVersion()
-    {
-        return $this->protocolVersion;
+            return array_map(function ($value) {
+                return trim($value, " \t");
+            }, $value);
+        }, $values);
     }
 }
